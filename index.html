@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>五子棋 - 人机对战</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(135deg, #1a0a00, #3d1a00);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: '微软雅黑', Arial, sans-serif;
+    color: #fff;
+  }
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    color: #ffd700;
+    text-shadow: 0 0 15px rgba(255,215,0,0.6);
+    letter-spacing: 4px;
+  }
+  #status {
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+    color: #ffe;
+    min-height: 28px;
+    text-align: center;
+  }
+  #gameContainer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  canvas {
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+    cursor: pointer;
+    display: block;
+  }
+  #btnRow {
+    margin-top: 14px;
+    display: flex;
+    gap: 14px;
+  }
+  .btn {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 24px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+    letter-spacing: 2px;
+  }
+  .btn:active { transform: scale(0.95); }
+  #restartBtn {
+    background: linear-gradient(90deg, #ffd700, #ff8c00);
+    color: #3d1a00;
+    box-shadow: 0 3px 12px rgba(255,165,0,0.5);
+  }
+  #undoBtn {
+    background: linear-gradient(90deg, #6ee7b7, #3b82f6);
+    color: #fff;
+    box-shadow: 0 3px 12px rgba(59,130,246,0.4);
+  }
+  #diffRow {
+    margin-bottom: 10px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .diffBtn {
+    padding: 6px 18px;
+    border-radius: 20px;
+    border: 2px solid #ffd700;
+    background: transparent;
+    color: #ffd700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .diffBtn.active {
+    background: #ffd700;
+    color: #3d1a00;
+    font-weight: bold;
+  }
+  #winOverlay {
+    display: none;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.65);
+    border-radius: 8px;
+    z-index: 10;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  #winOverlay.show { display: flex; }
+  #winMsg {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #ffd700;
+    text-shadow: 0 0 20px #ffd700;
+    margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+<h1>⚫ 五子棋 ⚪</h1>
+<div id="status">你执黑棋，先手落子！</div>
+<div id="diffRow">
+  <span style="color:#ffd700;font-size:0.9rem">难度：</span>
+  <button class="diffBtn active" id="easyBtn">简单</button>
+  <button class="diffBtn" id="hardBtn">困难</button>
+</div>
+<div id="gameContainer">
+  <canvas id="board"></canvas>
+  <div id="winOverlay">
+    <div id="winMsg"></div>
+    <button class="btn" id="playAgainBtn" style="background:linear-gradient(90deg,#ffd700,#ff8c00);color:#3d1a00;box-shadow:0 3px 12px rgba(255,165,0,0.5);">再来一局</button>
+  </div>
+</div>
+<div id="btnRow">
+  <button class="btn" id="restartBtn">重新开始</button>
+  <button class="btn" id="undoBtn">悔棋</button>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // --- 棋盘设置 ---
+  var COLS = 15, ROWS = 15;
+  var CELL = 36, PAD = 24;
+  var canvas = document.getElementById('board');
+  var ctx = canvas.getContext('2d');
+  canvas.width = CELL * (COLS - 1) + PAD * 2;
+  canvas.height = CELL * (ROWS - 1) + PAD * 2;
+
+  var board = [], history = [];
+  var gameOver = false, playerTurn = true;
+  var difficulty = 'easy'; // 'easy' or 'hard'
+  var lastMove = null;
+
+  var statusEl = document.getElementById('status');
+  var winOverlay = document.getElementById('winOverlay');
+  var winMsg = document.getElementById('winMsg');
+
+  // 初始化棋盘
+  function initBoard() {
+    board = [];
+    history = [];
+    gameOver = false;
+    playerTurn = true;
+    lastMove = null;
+    for (var r = 0; r < ROWS; r++) {
+      board[r] = [];
+      for (var c = 0; c < COLS; c++) board[r][c] = 0;
+    }
+    winOverlay.classList.remove('show');
+    statusEl.textContent = '你执黑棋，先手落子！';
+    drawBoard();
+  }
+
+  // 画棋盘
+  function drawBoard() {
+    // 木质背景
+    ctx.fillStyle = '#c8860a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 棋盘纹理
+    ctx.fillStyle = '#d4921b';
+    for (var i = 0; i < ROWS; i++) {
+      ctx.fillRect(0, PAD + i * CELL - 1, canvas.width, 2);
+    }
+    // 画格线
+    ctx.strokeStyle = '#8b5e00';
+    ctx.lineWidth = 1;
+    for (var c = 0; c < COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(PAD + c * CELL, PAD);
+      ctx.lineTo(PAD + c * CELL, PAD + (ROWS - 1) * CELL);
+      ctx.stroke();
+    }
+    for (var r = 0; r < ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(PAD, PAD + r * CELL);
+      ctx.lineTo(PAD + (COLS - 1) * CELL, PAD + r * CELL);
+      ctx.stroke();
+    }
+    // 星位点
+    var stars = [[3,3],[3,11],[11,3],[11,11],[7,7],[7,3],[7,11],[3,7],[11,7]];
+    stars.forEach(function(s) {
+      ctx.beginPath();
+      ctx.arc(PAD + s[1] * CELL, PAD + s[0] * CELL, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#8b5e00';
+      ctx.fill();
+    });
+    // 画棋子
+    for (var rr = 0; rr < ROWS; rr++) {
+      for (var cc = 0; cc < COLS; cc++) {
+        if (board[rr][cc]) drawPiece(rr, cc, board[rr][cc]);
+      }
+    }
+    // 最后落子标记
+    if (lastMove) {
+      ctx.beginPath();
+      var lx = PAD + lastMove[1] * CELL, ly = PAD + lastMove[0] * CELL;
+      ctx.arc(lx, ly, 5, 0, Math.PI * 2);
+      ctx.fillStyle = lastMove[2] === 1 ? '#ff4444' : '#aaffaa';
+      ctx.fill();
+    }
+  }
+
+  function drawPiece(r, c, who) {
+    var x = PAD + c * CELL, y = PAD + r * CELL, radius = CELL * 0.44;
+    var grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
+    if (who === 1) { // 黑棋
+      grad.addColorStop(0, '#888'); grad.addColorStop(1, '#111');
+    } else { // 白棋
+      grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#ccc');
+    }
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = who === 1 ? '#333' : '#aaa';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // 检查胜利
+  function checkWin(r, c, who) {
+    var dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    for (var d = 0; d < dirs.length; d++) {
+      var dr = dirs[d][0], dc = dirs[d][1], cnt = 1;
+      for (var k = 1; k < 5; k++) {
+        var nr = r + dr * k, nc = c + dc * k;
+        if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS || board[nr][nc] !== who) break;
+        cnt++;
+      }
+      for (var k2 = 1; k2 < 5; k2++) {
+        var nr2 = r - dr * k2, nc2 = c - dc * k2;
+        if (nr2 < 0 || nr2 >= ROWS || nc2 < 0 || nc2 >= COLS || board[nr2][nc2] !== who) break;
+        cnt++;
+      }
+      if (cnt >= 5) return true;
+    }
+    return false;
+  }
+
+  // 评分函数（用于AI）
+  function scorePos(r, c, who) {
+    var opp = who === 1 ? 2 : 1;
+    var dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    var total = 0;
+    dirs.forEach(function(d) {
+      var dr = d[0], dc = d[1];
+      function count(color) {
+        var n = 0;
+        for (var k = 1; k <= 4; k++) {
+          var nr = r + dr*k, nc = c + dc*k;
+          if (nr<0||nr>=ROWS||nc<0||nc>=COLS||board[nr][nc]!==color) break; n++;
+        }
+        for (var k2 = 1; k2 <= 4; k2++) {
+          var nr2 = r-dr*k2, nc2 = c-dc*k2;
+          if (nr2<0||nr2>=ROWS||nc2<0||nc2>=COLS||board[nr2][nc2]!==color) break; n++;
+        }
+        return n;
+      }
+      var myC = count(who), oppC = count(opp);
+      var sc = [0, 10, 100, 1000, 100000];
+      total += (myC >= 4 ? sc[4] : sc[myC]) * 1.2;
+      total += (oppC >= 4 ? sc[4] : sc[oppC]);
+    });
+    return total;
+  }
+
+  // AI 落子
+  function aiMove() {
+    var best = -1, br = -1, bc = -1;
+    var moves = [];
+    for (var r = 0; r < ROWS; r++)
+      for (var c = 0; c < COLS; c++)
+        if (!board[r][c]) {
+          // 只考虑附近有棋子的位置（困难）或随机+简单评估（简单）
+          if (hasNeighbor(r, c) || history.length === 0) {
+            moves.push([r, c]);
+          }
+        }
+    if (moves.length === 0) return;
+
+    // 困难：先尝试直接赢，再堵对手
+    if (difficulty === 'hard') {
+      for (var i = 0; i < moves.length; i++) {
+        var r2 = moves[i][0], c2 = moves[i][1];
+        board[r2][c2] = 2;
+        if (checkWin(r2, c2, 2)) { board[r2][c2] = 0; place(r2, c2, 2); return; }
+        board[r2][c2] = 0;
+      }
+      for (var j = 0; j < moves.length; j++) {
+        var r3 = moves[j][0], c3 = moves[j][1];
+        board[r3][c3] = 1;
+        if (checkWin(r3, c3, 1)) { board[r3][c3] = 0; place(r3, c3, 2); return; }
+        board[r3][c3] = 0;
+      }
+    }
+
+    // 简单模式加随机噪声
+    moves.forEach(function(m) {
+      var sc = scorePos(m[0], m[1], 2);
+      if (difficulty === 'easy') sc += Math.random() * 500;
+      if (sc > best) { best = sc; br = m[0]; bc = m[1]; }
+    });
+    if (br >= 0) place(br, bc, 2);
+  }
+
+  function hasNeighbor(r, c) {
+    for (var dr = -2; dr <= 2; dr++)
+      for (var dc = -2; dc <= 2; dc++) {
+        var nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && board[nr][nc]) return true;
+      }
+    return false;
+  }
+
+  function place(r, c, who) {
+    board[r][c] = who;
+    lastMove = [r, c, who];
+    history.push([r, c, who]);
+    drawBoard();
+    if (checkWin(r, c, who)) {
+      gameOver = true;
+      var msg = who === 1 ? '🎉 你赢了！' : '🤖 电脑赢了！';
+      winMsg.textContent = msg;
+      winOverlay.classList.add('show');
+      statusEl.textContent = msg;
+      return;
+    }
+    if (history.length === ROWS * COLS) {
+      gameOver = true; winMsg.textContent = '平局！';
+      winOverlay.classList.add('show'); return;
+    }
+    if (who === 1) {
+      playerTurn = false;
+      statusEl.textContent = '电脑思考中...';
+      setTimeout(function() { aiMove(); playerTurn = true; statusEl.textContent = '轮到你落子！'; }, 300);
+    }
+  }
+
+  // 点击棋盘
+  canvas.addEventListener('click', function(e) {
+    if (gameOver || !playerTurn) return;
+    var rect = canvas.getBoundingClientRect();
+    var scaleX = canvas.width / rect.width;
+    var scaleY = canvas.height / rect.height;
+    var mx = (e.clientX - rect.left) * scaleX;
+    var my = (e.clientY - rect.top) * scaleY;
+    var c = Math.round((mx - PAD) / CELL);
+    var r = Math.round((my - PAD) / CELL);
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+    if (board[r][c]) return;
+    place(r, c, 1);
+  });
+
+  // 重新开始按钮
+  var restartBtn = document.getElementById('restartBtn');
+  if (restartBtn) restartBtn.addEventListener('click', function() { initBoard(); });
+
+  // 再来一局按钮
+  var playAgainBtn = document.getElementById('playAgainBtn');
+  if (playAgainBtn) playAgainBtn.addEventListener('click', function() { initBoard(); });
+
+  // 悔棋按钮
+  var undoBtn = document.getElementById('undoBtn');
+  if (undoBtn) undoBtn.addEventListener('click', function() {
+    if (gameOver || history.length < 2) return;
+    // 撤销玩家和AI各一步
+    var last1 = history.pop(); board[last1[0]][last1[1]] = 0;
+    var last2 = history.pop(); board[last2[0]][last2[1]] = 0;
+    lastMove = history.length > 0 ? history[history.length - 1] : null;
+    playerTurn = true;
+    statusEl.textContent = '已悔棋，轮到你落子！';
+    drawBoard();
+  });
+
+  // 难度按钮
+  var easyBtn = document.getElementById('easyBtn');
+  var hardBtn = document.getElementById('hardBtn');
+  if (easyBtn) easyBtn.addEventListener('click', function() {
+    difficulty = 'easy';
+    easyBtn.classList.add('active'); hardBtn.classList.remove('active');
+    initBoard();
+  });
+  if (hardBtn) hardBtn.addEventListener('click', function() {
+    difficulty = 'hard';
+    hardBtn.classList.add('active'); easyBtn.classList.remove('active');
+    initBoard();
+  });
+
+  // 启动游戏
+  initBoard();
+
+  // BUTTON CHECKLIST: #restartBtn ✓ #playAgainBtn ✓ #undoBtn ✓ #easyBtn ✓ #hardBtn ✓
+});
+</script>
+</body>
+</html>
